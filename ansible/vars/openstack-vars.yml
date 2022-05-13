@@ -1,15 +1,3 @@
-# Default variables for provisoining OpenStack resources
-
-idr_deployment_cloud: idr
-idr_environment_idr: idr
-# REQUIRED: List of public SSH keys
-idr_keypair_keys:
-# Change these to match the image and flavours in your OpenStack cloud
-vm_image: CentOS 7
-vm_flavour: m1.large
-vm_flavour_large: m1.xlarge
-vm_flavour_medium: m1.medium
-
 # Copy these volumes for the production IDR
 # The default is to initialise new volumes
 idr_volume_database_db_src: "{{ omit }}"
@@ -35,3 +23,8 @@ idr_keypair_keys:
 vm_image: "CentOS 7.9 x86_64"
 vm_flavour: "m1.2xlarge"
 vm_flavour_large: "m1.4xlarge"
+vm_flavour_medium: "m1.4xlarge"
+
+vm_flavour: "c1.2xlarge"
+vm_flavour_large: "c1.2xlarge"
+vm_flavour_medium: "c1.2xlarge"
