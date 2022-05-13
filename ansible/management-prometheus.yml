@@ -1,0 +1,184 @@
+# Experimental: Prometheus
+
+- hosts: >
+    {{ idr_environment | default('idr') }}-hosts
+
+  roles:
+  - role: ome.prometheus_node
+
+
+- hosts: "{{ idr_environment | default('idr') }}-database-hosts"
+  roles:
+  - role: ome.prometheus_postgres
+    prometheus_postgres_dbname: idr
+    prometheus_postgres_query_filenames:
+    - queries-default.yml
+    - queries-pg_statio_user_tables.yml
+#    - queries-pg_stat_statements.yml
+
+
+- hosts: "{{ idr_environment | default('idr') }}-omero-hosts"
+
+  roles:
+
+  - role: ome.prometheus_jmx
+
+  # Needed for handlers
+  - role: ome.omero_common
+
+  - role: ome.omero_prometheus_exporter
+    omero_prometheus_exporter_omero_user: public
+    omero_prometheus_exporter_omero_password: "{{ idr_secret_public_password | default('public') }}"
+    # Disable the extra count queries to reduce load
+    omero_prometheus_exporter_counts_query_files: []
+
+  - role: ome.omero_web_django_prometheus
+
+  tasks:
+
+  - name: omero prometheus agent
+    become: yes
+    copy:
+      content: |
+        config set -- omero.jvmcfg.append.blitz "-javaagent:{{ jmx_javaagent }}=9180:/etc/prometheus/jmx-default-config.yml"
+        config set -- omero.jvmcfg.append.indexer "-javaagent:{{ jmx_javaagent }}=9181:/etc/prometheus/jmx-default-config.yml"
+        config set -- omero.jvmcfg.append.pixeldata "-javaagent:{{ jmx_javaagent }}=9182:/etc/prometheus/jmx-default-config.yml"
+      dest: "{{ omero_common_basedir }}/server/config/prometheus.omero"
+    notify:
+    - restart omero-server
+
+  vars:
+    # prometheus-jmx automatically creates this:
+    jmx_javaagent: /opt/prometheus/jars/jmx_prometheus_javaagent.jar
+
+
+- hosts: >
+    {{ idr_environment | default('idr') }}-dockermanager-hosts
+
+  roles:
+
+  - role: ome.cadvisor
+
+
+# If this is a pilot monitoring server we haven't yet loaded hostvars
+- hosts: "{{ idr_environment | default('idr') }}-pilotidr-hosts"
+
+- hosts: "{{ idr_environment | default('idr') }}-management-hosts"
+
+  roles:
+
+  - role: ome.docker
+    docker_use_ipv4_nic_mtu: True
+
+  - role: ome.prometheus
+    prometheus_docker_network: monitoring
+
+    prometheus_alert_repeat_interval: 25m
+    prometheus_alertmanager_slack_webhook: "{{ idr_secret_management_slack_webhook }}"
+    prometheus_alertmanager_slack_channel: "#idr-notify-{{ idr_environment | default('idr') }}"
+    # The defaults in the prometheus role are (30s 5m 3h)
+    # When testing you may want to decrease these to make it easier
+    #prometheus_alert_group_wait: 10s
+    #prometheus_alert_group_interval: 1m
+    #prometheus_alert_repeat_interval: 1m
+
+    # groupname must be unique
+    prometheus_targets:
+    - groupname: nodes
+      groups:
+      - "{{ idr_environment | default('idr') + monitoring_all_prefix + '-hosts' }}"
+      port: 9100
+      jobname: node-exporter
+      iface: "{{ idr_net_iface | default('eth0') }}"
+
+    - groupname: blitz
+      groups:
+      - "{{ idr_environment | default('idr') + monitoring_group_prefix + 'omero-hosts' }}"
+      port: 9180
+      jobname: jmx-blitz
+      iface: "{{ idr_net_iface | default('eth0') }}"
+
+    # TODO: indexer and pixeldata are currently broken (fail to start)on
+    # metadata53 due to the readonly work. These two targets should be
+    # reenabled when they are fixed:
+    # - groupname: indexer
+    #   groups:
+    #   - "{{ idr_environment | default('idr') + '-omero-hosts' }}"
+    #   port: 9181
+    #   jobname: jmx-indexer
+    #
+    # - groupname: pixeldata
+    #   groups:
+    #   - "{{ idr_environment | default('idr') + '-omero-hosts' }}"
+    #   port: 9182
+    #   jobname: jmx-pixeldata
+
+    - groupname: cadvisor
+      groups:
+      - "{{ idr_environment | default('idr') + '-dockermanager-hosts' }}"
+      port: 9280
+      jobname: cadvisor-docker
+      iface: "{{ idr_net_iface | default('eth0') }}"
+
+    # TODO: may need to split this into two roles, one for general stats
+    # and one for detailed statement performance metrics
+    - groupname: postgres
+      groups:
+      - "{{ idr_environment | default('idr') + monitoring_group_prefix + 'database-hosts' }}"
+      port: 9187
+      jobname: postgres-exporter
+      iface: "{{ idr_net_iface | default('eth0') }}"
+
+    - groupname: omero-web
+      groups:
+      - "{{ idr_environment | default('idr') + monitoring_group_prefix + 'omero-hosts' }}"
+      port: 80
+      jobname: django
+      metrics_path: /django_prometheus/metrics
+      iface: "{{ idr_net_iface | default('eth0') }}"
+
+    - groupname: omero-sessions
+      groups:
+      - "{{ idr_environment | default('idr') + monitoring_group_prefix + 'omero-hosts' }}"
+      port: 9449
+      jobname: omero-sessions
+      iface: "{{ idr_net_iface | default('eth0') }}"
+
+    prometheus_http_2xx_internal_targets: >
+      {{
+        (groups[(idr_environment | default('idr')) + monitoring_group_prefix + 'omero-hosts'] +
+          (
+             groups[(idr_environment | default('idr')) + '-proxy-hosts']
+             | default([])
+          )
+        ) |
+        map('extract', hostvars, [
+            'ansible_' + (hosts_populate_iface | default('eth0')),
+            'ipv4',
+            'address'
+        ]) |
+        map('regex_replace', '^(.*)$', 'http://\1/webclient/metadata_details/screen/1201/' ) | list
+      }}
+
+    prometheus_http_2xx_external_targets:
+    - http://idr.openmicroscopy.org/about/
+    - https://idr.openmicroscopy.org/about/
+
+  vars:
+    # If this is the pilot management server we need to scrape:
+    #   hosts in the individual pilot deployments <idrenv>-pilot-hosts
+    #   hosts in parent environment <idrenv>-hosts
+    # In this case there is a special group <idrenv>-pilotidr-hosts
+    # instead of the usual <idrenv>-hosts
+    monitoring_all_prefix: >-
+      {{
+        (idr_enable_pilotidr | default(False)) |
+          ternary('-pilotidr', '')
+      }}
+    # If this is the pilot management server we need to scrape
+    # hosts in the individual pilot deployments
+    monitoring_group_prefix: >-
+      {{
+        (idr_enable_pilotidr | default(False)) |
+          ternary('-pilot', '-')
+      }}

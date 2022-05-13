@@ -1,0 +1,64 @@
+# Setup the IDR haproxy for non-web requests
+#
+# We can't do proper session pinning with the OMERO binary protocol because
+# there's no way to insert or extract an identifier, so instead we assign
+# separate front-end ports for each back-end server and rely on the client
+# to choose a random port for each connection.
+#
+# To support autoconfiguration of clients we also create a json config
+# file with a list of connections parameters that clients should randomly
+# choose from.
+
+
+# Load hostvars (production OMERO)
+- hosts: >
+    {{ idr_environment | default('idr') }}-omeroreadonly-hosts
+
+
+- hosts: "{{ idr_environment | default('idr') }}-proxy-hosts"
+
+  pre_tasks:
+
+  - name: Get all omeroreadonly IP
+    set_fact:
+      _omero_omeroreadonly_hosts: >-
+        {{
+          groups[idr_environment | default('idr') + '-omeroreadonly-hosts'] |
+          map('extract', hostvars,
+            ['ansible_' + (idr_net_iface | default('eth0')), 'ipv4', 'address']) | sort
+        }}
+
+  - name: Get external omeroreadonly IP
+    set_fact:
+      omero_omeroreadonly_hosts_external: >-
+        {{
+          _omero_omeroreadonly_hosts[
+            ([
+              idr_backend_reserved_offset,
+              _omero_omeroreadonly_hosts | length - 1
+            ] | min):]
+        }}
+
+  roles:
+  - role: ome.selinux_utils
+  - role: ome.haproxy
+    haproxy_cfg_template: "{{ playbook_dir }}/templates/haproxy.cfg.j2"
+    # haproxy needs some special setup to log to a file
+    haproxy_syslog_configure_udp: True
+    haproxy_syslog_enable: True
+
+  tasks:
+
+  - name: Create client autoconfiguration directory
+    become: yes
+    file:
+      path: /srv/www/connection
+      state: directory
+      mode: 0755
+
+  - name: Create client autoconfiguration file
+    become: yes
+    template:
+      src: templates/omero-client.json.j2
+      dest: /srv/www/connection/omero-client.json
+      mode: 0644

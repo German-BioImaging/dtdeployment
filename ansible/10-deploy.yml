@@ -1,0 +1,43 @@
+# Run all storage related playbooks for setting up the IDR infrastructure
+# This will be specific to your Openstack and local environment
+
+- include: 02-networks.yml
+- include: centos-init.yml
+- include: upgrade-dist.yml
+- include: os-volumes.yml
+- include: reboot-if-kernel.yml
+
+# Run all public playbooks for setting up the IDR infrastructure in any
+# environment. This does not run any storage/networking/cloud specific
+# tasks, nor does it run playbooks requiring private configuration
+
+- include: hosts.yml
+- include: firewall.yml
+- include: docker.yml
+- include: proxy.yml
+- include: proxy-about.yml
+- include: haproxy.yml
+
+# Run all playbooks for setting up services built on top of the IDR
+
+### Ingress services
+- include: ftp.yml
+- include: s3gateway.yml
+
+### Export services
+- include: export.yml
+
+### Transfer services
+- include: transfer.yml
+
+# IDR post-installation playbooks
+
+- include: reset-users-groups.yml
+
+# IDR post-installation playbooks
+# Some of this requires private configuration information
+
+- include: management.yml
+- include: management-prometheus.yml
+- include: management-grafana.yml
+- include: management-fluentd.yml

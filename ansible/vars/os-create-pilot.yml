@@ -1,0 +1,28 @@
+---
+# pilot
+
+idr_deployment_cloud: ebi-staging
+idr_environment: pilot
+idr_environment_idr: "{{ idr_environment }}"
+idr_keypair_keys:
+- ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAgEAu6cyakeQ+Ue/Xvkc6Tbm697VLe+422wOBEjHx0N8HNAv+i1l7/+9/gJTtO1gsxO7Hv8b/CzKg3dBkgS+DrmU2Ygrgr0kfhdawb06X3YNCngLEcto1nSJ0YMgXocg/nLBCgz3UA12N9L6tsvBH9gvLUhhf67WaOIKHtDsdIXwJdEz6pn4Mp6Jx57ZG5WXNqvVUHVbvghBOUwJ6m6WivpHKh63kM8hGft6XYOSgzEoGfNFVva/HyYPOlkucKsFrHr7lX7kmXol2ya06QsA4GcO4Ujl1GYltTUPK327ALKEWtjLSR+bvXeUsdwNf7ouJokKQlEJy5+YM4iMtPV62UeTs7vnmp7EpezNEWallCAstJTHvLyKlJSFIDFQWAT9mkhWjeY9Koruu6stktU6yjhsuvPJ8A51rPD7iNQxS2k2wblUiM5XqsGoOjNXTubYTtrUOs6u8wj4hRZT4AEg6Z7ZTgEoK8znsrq304mDvyJPyH2nT8wrdqUoIjSzoMDqe/zTv152Vcj139piNgTtSjMxvP4L71CKVl2SkESbOU62KgDS1sipE0ugTes/P53IdjRP97a6usQdumRZru87xKoueFcDNhwl9afQUO/sASOywlkZMCXD8OlLGhUa7KXjtkegSMjTR9SZ8oNOjvAj69aKHN2jwJmDMJPTGdRV83M0SZE= Josh Moore's key (Nov 2009)
+- ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEtBECZtfU3dFc92SrpyZtFL/PKhtJ+hDsWxAO3Qhwu/ s.besson@dundee.ac.uk
+- ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAztfba13IKethBxGJOWhBKvgYIGI+vTlHjYMdeFjBxJgc7sg4dabMrdhwIhXjVOyvUgb+kQrSofoqWCwQ4yWl8jEC1kmwKO8T/qDcPH1+pHNtXOmc30502IUK/mJnKng6if5Mr4SHlLDcDUIp9nhDV6N7qQxnx7Zsbx+zlj8sfXHC/YNSJuQOaGwvur77z4IXZjepCkEEZghPdr91x0IkLN5Dx4ynXaWgXzjule910eghgj1tdt2eqX3Xm78s2U4q7nThfN2wJJvcsV9wAFTMJfV4RrbuZ+lqBK+RvLziSy1fEFMQXVnYcMKIhqHYnMJZc6ouO+VtIsVShwPFaJwczQ== j.burel@dundee.ac.uk
+
+vm_image: CentOS-7-x86_64-GenericCloud-2009
+vm_flavour: 8c32m80d
+vm_flavour_medium: 4c8m80d
+
+idr_environment_idr_subnet: 192.168.10.0/24
+idr_network_route_external: public
+
+idr_vm_keyname: idr-key-20210310
+idr_keypair_name: idr-key-20210310
+
+idr_enable_publicidr: False
+idr_enable_pilotidr: True
+idr_enable_pilotidr_omero: False
+idr_enable_ftp: False
+
+# This is used to populate the proxy's hosts file
+idr_hosts_populate_openstack_group: "{{ idr_environment_idr }}-pilotidr-hosts"

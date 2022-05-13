@@ -1,0 +1,16 @@
+# Setup the IDR web proxy about pages
+
+- hosts: "{{ idr_environment | default('idr') }}-proxy-hosts"
+
+  roles:
+  - role: ome.deploy_archive
+    become: yes
+
+  tasks:
+  - name: Set website displayed version
+    become: yes
+    copy:
+      content: "{{ idr_deployment_web_version_value }}"
+      dest: "{{ idr_deployment_web_version_file }}"
+      force: yes
+      mode: 0644

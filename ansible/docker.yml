@@ -1,0 +1,15 @@
+# Setup IDR Docker nodes
+
+- hosts: >
+    {{ idr_environment | default('idr') }}-docker-hosts
+
+  roles:
+    - role: ome.docker
+      docker_use_ipv4_nic_mtu: True
+
+  tasks:
+  - name: install docker-python
+    become: yes
+    yum:
+      name: docker-python
+      state: present

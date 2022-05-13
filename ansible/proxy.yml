@@ -1,0 +1,79 @@
+# Setup the IDR web proxy
+#
+# This must be run after all other IDR services are installed, as we need the
+# full list of backend services to be proxied
+
+# Load hostvars (production OMERO)
+- hosts: >
+    {{ idr_environment | default('idr') }}-omero-hosts
+
+
+# Load hostvars (managment server)
+- hosts: >
+    {{ idr_environment | default('idr') }}-management-hosts
+
+
+- hosts: "{{ idr_environment | default('idr') }}-proxy-hosts"
+  roles:
+  - role: ome.selinux_utils
+
+- hosts: "{{ idr_environment | default('idr') }}-proxy-hosts"
+
+  pre_tasks:
+
+
+
+  - name: Get all omeroreadonly IP
+    set_fact:
+      _omero_omeroreadonly_hosts: >-
+        {{
+          groups[idr_environment | default('idr') + '-omeroreadonly-hosts'] |
+          map('extract', hostvars,
+            ['ansible_' + (idr_net_iface | default('eth0')), 'ipv4', 'address']) | sort
+        }}
+
+  - name: Get omero IP
+    set_fact:
+      omero_omeroreadonly_hosts_reserved: >-
+        {{
+          _omero_omeroreadonly_hosts[:idr_backend_reserved_offset]
+        }}
+      omero_omeroreadonly_hosts_external: >-
+        {{
+          _omero_omeroreadonly_hosts[
+            ([
+              idr_backend_reserved_offset,
+              _omero_omeroreadonly_hosts | length - 1
+            ] | min):]
+        }}
+      omero_omeroreadwrite_hosts: >-
+        {{
+          groups[idr_environment | default('idr') + '-omeroreadwrite-hosts'] |
+          map('extract', hostvars,
+            ['ansible_' + (idr_net_iface | default('eth0')), 'ipv4', 'address']) | list
+        }}
+
+  - name: Get management server IP
+    set_fact:
+      management_host_ansible: >-
+        {{
+          hostvars[groups[
+            idr_environment | default('idr') + '-management-hosts'][0]]
+            ['ansible_' + (idr_net_iface | default('eth0'))]['ipv4']['address']
+        }}
+    when: groups[idr_environment | default('idr') + '-management-hosts'] is defined
+
+  roles:
+  # Default to a self-signed certificate
+  # To use production certificates see
+  # https://github.com/openmicroscopy/ansible-role-ssl-certificate/blob/0.2.0/README.md
+  - role: ome.ssl_certificate
+  - role: ome.nginx_proxy
+
+  handlers:
+  - name: restart nginx when certificates changed
+    listen: ssl certificate changed
+    become: yes
+    service:
+      name: nginx
+      state: restarted

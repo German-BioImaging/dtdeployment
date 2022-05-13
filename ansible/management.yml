@@ -1,0 +1,27 @@
+# Configure monitoring across all IDR servers in a given tenancy irrespective
+# of idr environment, i.e. this playbook applies to all idr environments
+# simultaneously
+#
+# This must be run using the private openstack dynamic inventory since it
+# requires the internal network IPs of each host
+
+# Install slack notifier on all OMERO servers in all environments
+- hosts: >
+    {{ idr_environment | default('idr') }}-omero-hosts
+
+  pre_tasks:
+  - name: Get short hostname (not the same as the Ansible hostname vars)
+    command: hostname -s
+    register: short_hostname
+    check_mode: no
+    changed_when: False
+
+  - name: Set omero logmonitor bot-name
+    set_fact:
+      omero_logmonitor_slack_name: "{{ short_hostname.stdout }}-logbot"
+      omero_logmonitor_server_name: "{{ short_hostname.stdout }}"
+
+  roles:
+  - role: ome.omero_logmonitor
+    omero_logmonitor_slack_token: "{{ idr_secret_omero_logmonitor_slack_token | default(None) }}"
+    omero_logmonitor_slack_channel: idr-logs-{{ idr_environment | default('idr') }}
