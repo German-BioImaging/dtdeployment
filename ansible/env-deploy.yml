@@ -1,0 +1,93 @@
+---
+# This assumes idr_parent_environment has already been provisioned
+
+- hosts: localhost
+  connection: local
+
+  pre_tasks:
+
+  # These variables can be overridden in a variables file and included
+  # on the ansible command line as -e @path/to/secret.yml
+  - name: Include default provisioning variables
+    include_vars: vars/openstack-vars.yml
+
+  roles:
+
+    - role: idr.openstack_idr_instance
+      idr_environment: "{{ idr_environment_idr }}"
+      idr_vm_name: "{{ idr_environment_idr }}-omeroreadwrite"
+      idr_vm_image: "{{ vm_image }}"
+      idr_vm_flavour: "{{ vm_flavour_large }}"
+      idr_vm_database: True
+      idr_vm_omeroreadwrite: True
+      idr_vm_dockerworker: True
+      idr_vm_extra_groups:
+      - "{{ idr_environment_idr }}-{{ idr_vm_storage_group }}"
+      - "{{ idr_vm_storage_group }}"
+      # This extra group will let us setup /etc/hosts on the proxy
+      # without adding it to the parent environment
+      - "{{ idr_parent_environment }}-pilotidr-hosts"
+      # These extra groups allow monitoring in the parent environment to find
+      # these hosts in the individual pilot environments
+      - "{{ idr_parent_environment }}-pilotomero-hosts"
+      - "{{ idr_parent_environment }}-pilotdatabase-hosts"
+      # This extra group controls the deployment of the searchengine app
+      - searchengine-hosts
+      - "{{ idr_environment_idr }}-searchengine-hosts"
+      idr_vm_networks: >
+        {{ [ {'net-name': idr_parent_environment} ] +
+          ((idr_network_storage | length > 0) |
+            ternary([{'net-name': idr_network_storage}], []))
+        }}
+      when: idr_enable_pilotidr_omero | default(False)
+
+    - role: ome.openstack_volume_storage
+      openstack_volume_size: 800
+      openstack_volume_vmname: "{{ idr_environment_idr }}-omeroreadwrite"
+      openstack_volume_name: "{{ idr_environment_idr }}-omeroreadwrite-db"
+      openstack_volume_device: /dev/vdb
+      openstack_volume_source: "{{ idr_volume_database_db_src }}"
+      when: idr_enable_pilotidr_omero | default(False)
+
+    - role: ome.openstack_volume_storage
+      openstack_volume_size: 1200
+      openstack_volume_vmname: "{{ idr_environment_idr }}-omeroreadwrite"
+      openstack_volume_name: "{{ idr_environment_idr }}-omeroreadwrite-data"
+      openstack_volume_device: /dev/vdc
+      openstack_volume_source: "{{ idr_volume_omero_data_src }}"
+      when: idr_enable_pilotidr_omero | default(False)
+
+
+    ############################################################
+    # OME dev server
+
+    - role: idr.openstack_idr_instance
+      idr_environment: "{{ idr_environment_idr }}"
+      idr_vm_name: "{{ idr_environment_idr }}-dev"
+      idr_vm_image: "{{ vm_image }}"
+      idr_vm_flavour: "{{ vm_flavour_large }}"
+      idr_vm_dockermanager: True
+      idr_vm_extra_groups:
+      - "{{ idr_environment_idr }}-{{ idr_vm_storage_group }}"
+      - "{{ idr_vm_storage_group }}"
+      # This extra group will let us setup /etc/hosts on the proxy
+      # without adding it to the parent environment
+      - "{{ idr_parent_environment }}-pilotidr-hosts"
+      - "{{ idr_environment_idr }}-data-hosts"
+      idr_vm_networks: >
+        {{ [ {'net-name': idr_parent_environment} ] +
+          ((idr_network_storage | length > 0) |
+            ternary([{'net-name': idr_network_storage}], []))
+        }}
+      idr_vm_security_groups:
+        - 'default'
+        - 'idr-nfs-internal'
+      when: idr_enable_pilotidr_devserver | default(False)
+
+    - role: ome.openstack_volume_storage
+      openstack_volume_size: "{{ volume_size | default(5000) }}"
+      openstack_volume_vmname: "{{ idr_environment_idr }}-dev"
+      openstack_volume_name: "{{ idr_environment_idr }}-dev-data"
+      openstack_volume_device: /dev/vdb
+      openstack_volume_type: "{{ volume_type | default(omit) }}"
+      when: idr_enable_pilotidr_devserver | default(False)
