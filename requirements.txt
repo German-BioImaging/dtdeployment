@@ -1,0 +1,12 @@
+# Note: you must start with `pip install -U pip` for this to work
+pip>=1.5.6
+
+ome-ansible-molecule
+requests
+docker-py
+python-vagrant
+shade
+python-openstackclient
+python-novaclient
+os-client-config
+dnspython
