@@ -1,0 +1,612 @@
+######################################################################
+# Variables common to OMERO read-write and read-only servers
+######################################################################
+
+
+######################################################################
+# Shared variables
+
+# Force a downgrade from 5.6.1
+# https://github.com/ome/omero-server/issues/93
+idr_omero_server_release: 5.6.0
+omero_server_checkupgrade_comparator: '!='
+
+idr_omero_web_release: 5.14.0
+# omero-web depends on omero-py but may not pin the latest release
+# omero_web_python_addons:
+#   - omero-py==5.9.0
+# ome.omero_server role installs omero-py but this may not be the latest release
+# TODO: This is an internal role variable, replace when we have a proper way
+# https://github.com/ome/ansible-role-omero-server/blob/3.1.0/defaults/main.yml#L89
+# _omero_py_version: ==5.9.0
+
+artifactory_baseurl: "https://artifacts.openmicroscopy.org/artifactory/maven"
+
+# Override the lib/client JARs on the omeroreadwrite server
+# Works around the OMERO.server 5.6.3 upgrade issue - to be reverted when
+# the server is upgraded
+# See https://github.com/IDR/deployment/issues/327
+omero_client_jars:
+  - name: omero-romio
+    group: org/openmicroscopy
+    version: "5.6.2"
+  - name: omero-blitz
+    group: org/openmicroscopy
+    version: "5.5.8"
+
+# The IDR OMERO server uses a custom IDR build
+idr_bf_jars:
+  - name: formats-api
+    group: idr
+    version: "0.6.8"
+  - name: formats-bsd
+    group: idr
+    version: "0.6.8"
+  - name: formats-gpl
+    group: idr
+    version: "0.6.8"
+
+ice_install_devel: false
+ice_install_python: false
+# If you're using a CI build you might need to disable omego SSL verification
+#idr_ANSIBLE_ENVIRONMENT_VARIABLES: { OMEGO_SSL_NO_VERIFY: 1 }
+
+# This is needed to ensure the client version matches the server
+postgresql_version: "11"
+
+
+######################################################################
+# openmicroscopy.fluentd vars
+fluentd_source_configs:
+- files/fluentd/omero.conf
+
+
+######################################################################
+# openmicroscopy.omero-server role vars
+
+omero_server_release: "{{ idr_omero_server_release }}"
+
+omero_server_python3: true
+
+# Must be defined outside
+omero_server_dbhost: "{{ omero_db_host_ansible }}"
+omero_server_dbname: idr
+# These are separate for omeroreadwrite and omeroreadonly
+#omero_server_dbuser:
+#omero_server_dbpassword:
+
+omero_server_system_uid: 546
+omero_server_system_managedrepo_group: idr-data
+omero_server_datadir: /data/OMERO
+omero_server_datadir_bioformatscache: /data/BioFormatsCache
+
+omero_server_systemd_limit_nofile: 16384
+
+omero_server_python_addons:
+- omero-cli-render==0.7.0
+- omero-metadata==0.9.0
+- omero-upload==0.4.0
+- omero-rois==0.3.0
+- pandas==1.1.0
+
+omero_server_config_set:
+  omero.db.poolsize: 25
+  omero.jvmcfg.heap_size.blitz: "24G"
+  omero.fs.repo.path: "%user%_%userId%/%thread%//%year%-%month%/%day%/%time%"
+  # public user doesn;t share omero session between visitors
+  #omero.sessions.timeout: 3600000
+  omero.policy.binary_access: "+read,+write,-image,-plate"
+  # Prevent retrieval of uncached BF data
+  omero.pixeldata.fail_if_missing: True
+  # Group/User drop down menu
+  omero.client.ui.menu.dropdown.colleagues.enabled: False
+  omero.client.ui.menu.dropdown.everyone.label: "Public data"
+  omero.client.ui.menu.dropdown.leaders.enabled: False
+  # Tree display
+  omero.client.ui.tree.type_order: False
+  omero.client.ui.tree.orphans.enabled: False
+  # Websockets (no wss for now to avoid dealing with certificates)
+  omero.client.icetransports: ssl,tcp,ws
+  # Disable all components except Blitz and Tables
+  omero.server.nodedescriptors: "master:Blitz-0,Tables-0"
+
+
+######################################################################
+# Other dependent role vars
+
+java_versions:
+  - "11"
+# Install JDK to provide jstack
+java_jdk_install: True
+
+omero_logmonitor_basedir: /opt/omero/logmonitor
+# TODO: separate server and web configurations
+omero_logmonitor_logs_dir: /opt/omero/server/OMERO.server/var/log
+
+omero_user_system: omero-server
+
+
+# TODO: The rest of this file should go into a new omero-web-hosts group
+
+######################################################################
+# openmicroscopy.omero-web role vars
+
+omero_web_python3: true
+
+idr_omero_web_public_url_filters_webclient_exclude:
+- action
+- annotate_(file|tags|comment|rating|map)
+- script_ui
+- ome_tiff
+- figure_script
+- render_image_download
+
+idr_omero_web_public_url_filters:
+- api/
+- webadmin/myphoto/
+- mapr/
+- figure/
+- iviewer/
+# Needed in OMERO.web 5.6.1 to allow the root app patch (/→/idr_gallery)
+- '$'
+- search/
+- search/cell/
+- search/tissue/
+- gallery-api/
+- gallery_settings/
+- cell/
+- tissue/
+- webclient/(?!({{ idr_omero_web_public_url_filters_webclient_exclude | join('|') }}))
+- webgateway/(?!(archived_files|download_as))
+
+
+omero_web_release: "{{ idr_omero_web_release }}"
+
+omero_web_config_set:
+  # web
+  omero.web.api.max_limit: 1000
+  omero.web.api.absolute_url: https://idr.openmicroscopy.org/
+  omero.web.application_server: wsgi-tcp
+  omero.web.application_server.max_requests: 30000
+  omero.web.wsgi_workers: 25
+  #omero.web.wsgi_timeout 30
+  #omero.web.wsgi_args -- '--forwarded-allow-ips=YOUR_IP'
+  omero.web.use_x_forwarded_host: True
+  # The config generated by omero web wsgi contains X-Forwarded-Proto
+  # Override it in the front-end proxy by checking a different header
+  omero.web.secure_proxy_ssl_header:
+    - HTTP_X_FORWARDED_PROTO_OMERO_WEB
+    - https
+  omero.web.server_list:
+    # This is overridden in the molecule test, see molecule/publicidr/molecule.yml
+    - - "{{ idr_omeroreadonly_web_omero | default('localhost') }}"
+      - 4064
+      - omero
+  # public user
+  omero.web.public.enabled: True
+  omero.web.public.server_id: 1
+  omero.web.public.user: "{{ idr_secret_public_user | default('public') }}"
+  omero.web.public.password: "{{ idr_secret_public_password | default('public') }}"
+  omero.web.public.url_filter: "^/({{ idr_omero_web_public_url_filters | join('|') }})"
+  omero.web.login_redirect:
+    redirect:
+      - webindex
+    viewname: load_template
+    args:
+      - userdata
+    query_string: experimenter=-1
+  # session
+  omero.web.session_cookie_name: sessionid_{{ idr_environment | default('idr') }}
+  # TODO: Do we need separate cookies for each web backend?
+  #omero.web.session_cookie_name: sessionid_{{ ansible_hostname }}
+  omero.web.session_cookie_age: 3600
+  # redis
+  omero.web.session_engine: django.contrib.sessions.backends.cache
+  omero.web.caches:
+    default:
+      BACKEND: django_redis.cache.RedisCache
+      LOCATION: redis://{{ omero_redis_host_ansible | default('127.0.0.1') }}:6379/0
+  # / goes to idr_gallery
+  omero.web.root_application: idr_gallery
+  # social media
+  omero.web.sharing.twitter:
+    omero: "@openmicroscopy"
+  omero.web.sharing.opengraph:
+    omero: "Open Microscopy"
+  # top-left logo
+  omero.web.top_logo: /about/img/logos/logo-idr-webclient.png
+  omero.web.top_logo_link: https://idr.openmicroscopy.org/
+  # Clear the top links and metadata (They will be set later)
+  omero.web.ui.top_links: []
+  omero.web.ui.metadata_panes: []
+  omero.web.wsgi_timeout: "{{ idr_omero_web_timeout | default(60) }}"
+# TODO: This needs careful review of the code
+# https://github.com/openmicroscopy/openmicroscopy/blob/v5.4.0-m2/components/tools/OmeroWeb/omeroweb/decorators.py#L305
+  omero.web.public.cache.enabled: True
+  omero.web.public.cache.timeout: 60
+  omero.web.page_size: 500
+  omero.web.user_dropdown: "{{ idr_omero_web_user_dropdown | default(true) }}"
+  # Feedback
+  omero.web.feedback.comment.enabled: False
+  # Nginx extra omero-web config
+  omero.web.nginx_server_extra_config: "{{ idr_omero_web_nginx_server_extra_config | default([]) }}"
+
+
+######################################################################
+# Plugins and additional web configuration
+
+omero_web_apps_packages:
+- omero-mapr==0.5.0
+- omero-iviewer==0.11.3
+- idr-gallery==3.6.1
+- omero-figure==4.4.3
+omero_web_apps_names:
+- omero_mapr
+- omero_iviewer
+- idr_gallery
+- omero_figure
+
+omero_web_apps_top_links:
+- label: Studies
+  link:
+    viewname: webindex
+    query_string: { experimenter: -1 }
+  attrs:
+    title: Image Data Repository
+- label: Genes
+  link:
+    viewname: maprindex_gene
+    query_string: { experimenter: -1 }
+  attrs:
+    title: Genes browser
+- label: Phenotypes
+  link:
+    viewname: maprindex_phenotype
+    query_string: { experimenter: -1 }
+  attrs:
+    title: Phenotypes browser
+- label: Cell Lines
+  link:
+    viewname: maprindex_cellline
+    query_string: {"experimenter": -1}
+  attrs:
+    title: Cell Lines browser
+- label: siRNAs
+  link:
+    viewname: maprindex_sirna
+    query_string: { experimenter: -1 }
+  attrs:
+    title: siRNAs browser
+- label: Antibodies
+  link:
+    viewname: maprindex_antibody
+    query_string: {"experimenter": -1}
+  attrs:
+    title: Antibodies browser
+- label: Compounds
+  link:
+    viewname: maprindex_compound
+    query_string: {"experimenter": -1}
+  attrs:
+    title: Compounds browser
+- label: Organisms
+  link:
+    viewname: maprindex_organism
+    query_string: {"experimenter": -1}
+  attrs:
+    title: Organisms browser
+- label: About
+  link: https://idr.openmicroscopy.org/about/
+  attrs:
+    title: About the Image Data Resource
+
+# Metadata Panes order
+omero_web_apps_ui_metadata_panes:
+- name: "map"
+  label: "Attributes"
+  index: 0
+- name: "table"
+  label: "Tables"
+  index: 1
+- name: "file"
+  label: "Attachments"
+  index: 2
+- name: "comment"
+  label: "Comments"
+  index: 3
+- name: "tag"
+  label: "Tags"
+  index: 4
+- name: "rating"
+  label: "Ratings"
+  index: 5
+- name: "other"
+  label: "Others"
+  index: 6
+
+# Additional plugin config
+# append...
+omero_web_apps_config_append:
+  omero.web.open_with:
+  - - omero_iviewer
+    - omero_iviewer_index
+    - script_url: omero_iviewer/openwith.js
+      supported_objects:
+      - image
+      - dataset
+      - well
+      label: OMERO.iviewer
+
+# set...
+omero_web_apps_config_set:
+  omero.web.mapr.config:
+  - menu: "gene"
+    config:
+      default:
+        - "Gene Symbol"
+      all:
+        - "Gene Symbol"
+        - "Gene Identifier"
+      ns:
+        - "openmicroscopy.org/mapr/gene"
+      label: "Gene"
+      case_sensitive: True
+  - menu: "genesupplementary"
+    config:
+      default: []
+      all: []
+      ns:
+        - "openmicroscopy.org/mapr/gene/supplementary"
+      label: "Gene supplementary"
+  - menu: "sirna"
+    config:
+      default:
+        - "siRNA Identifier"
+      all:
+        - "siRNA Identifier"
+        - "siRNA Pool Identifier"
+      ns:
+        - "openmicroscopy.org/mapr/sirna"
+      label: "siRNA"
+  - menu: "sirnasupplementary"
+    config:
+      label: "siRNA supplementary"
+      default: []
+      all: []
+      ns:
+        - "openmicroscopy.org/mapr/sirna/supplementary"
+  - menu: "phenotype"
+    config:
+      default:
+        - "Phenotype"
+      all:
+        - "Phenotype"
+        - "Phenotype Term Accession"
+      ns:
+        - "openmicroscopy.org/mapr/phenotype"
+      label: "Phenotype"
+      case_sensitive: True
+      wildcard:
+        enabled: True
+  - menu: "compound"
+    config:
+      default:
+        - "Compound Name"
+      all:
+        - "Compound Name"
+      ns:
+        - "openmicroscopy.org/mapr/compound"
+      label: "Compound"
+      case_sensitive: True
+  - menu: "compoundsupplementary"
+    config:
+      default: []
+      all: []
+      ns:
+        - "openmicroscopy.org/mapr/compound/supplementary"
+      label: "Compound supplementary"
+  - menu: "organism"
+    config:
+      default:
+        - "Organism"
+      all:
+        - "Organism"
+      ns:
+        - "openmicroscopy.org/mapr/organism"
+      label: "Organism"
+      wildcard:
+        enabled: True
+  - menu: "antibody"
+    config:
+      default:
+        - "Antibody Identifier"
+      all:
+        - "Antibody Identifier"
+      ns:
+        - "openmicroscopy.org/mapr/antibody"
+      label: "Antibody"
+      case_sensitive: True
+  - menu: "antibodysupplementary"
+    config:
+      default: []
+      all: []
+      ns:
+        - "openmicroscopy.org/mapr/antibody/supplementary"
+      label: "Antibody supplementary"
+  - menu: "orf"
+    config:
+      default:
+        - "ORF Identifier"
+      all:
+        - "ORF Identifier"
+      ns:
+        - "openmicroscopy.org/mapr/orf"
+      label: "ORF"
+  - menu: "orfsupplementary"
+    config:
+      default: []
+      all: []
+      ns:
+        - "openmicroscopy.org/mapr/orf/supplementary"
+      label: "ORF supplementary"
+  - menu: "cellline"
+    config:
+      default:
+        - "Cell Line"
+      all:
+        - "Cell Line"
+      ns:
+        - "openmicroscopy.org/mapr/cell_line"
+      label: "Cell Lines"
+      wildcard:
+        enabled: True
+  - menu: "celllinesupplementary"
+    config:
+      default: []
+      all: []
+      ns:
+        - "openmicroscopy.org/mapr/cell_line/supplementary"
+      label: "Cell Lines supplementary"
+  - menu: "protein"
+    config:
+      default:
+        - "Protein"
+      all:
+        - "Protein"
+      ns:
+        - "openmicroscopy.org/mapr/protein"
+      label: "Protein"
+  - menu: "proteinsupplementary"
+    config:
+      default: []
+      all: []
+      ns:
+        - "openmicroscopy.org/mapr/protein/supplementary"
+      label: "Protein supplementary"
+  - menu: "others"
+    config:
+      default:
+        - "Others"
+      all:
+        - "Others"
+      ns:
+        - "openmicroscopy.org/omero/bulk_annotations"
+      label: "Others"
+  - menu: "notebook"
+    config:
+      default:
+        - "Study Notebook"
+      all:
+        - "Study Notebook"
+      ns:
+        - "openmicroscopy.org/idr/analysis/notebook"
+      label: "Analysis Notebook"
+  omero.web.viewer.view: omero_iviewer.views.index
+  omero.web.gallery.favicon: "https://idr.openmicroscopy.org/about/img/logos/favicon-idr.ico"
+  omero.web.gallery.top_left_logo:
+    src: "https://idr.openmicroscopy.org/about/img/logos/logo-idr.svg"
+  omero.web.gallery.top_right_links:
+    - text: "About"
+      href: "https://idr.openmicroscopy.org/about/index.html"
+      submenu:
+        - text: "Overview"
+          href: "https://idr.openmicroscopy.org/about/index.html"
+        - text: "Published studies"
+          href: "https://idr.openmicroscopy.org/about/studies.html"
+        - text: "Linked resources"
+          href: "https://idr.openmicroscopy.org/about/linked-resources.html"
+        - text: "API Access"
+          href: "https://idr.openmicroscopy.org/about/api.html"
+        - text: "Data download"
+          href: "https://idr.openmicroscopy.org/about/download.html"
+        - text: "Image Tools Resource (ITR)"
+          href: "https://idr.openmicroscopy.org/about/itr.html"
+        - text: "Analysis Environments"
+          href: "https://idr.openmicroscopy.org/about/analysis-environments.html"
+        - text: "Deployment"
+          href: "https://idr.openmicroscopy.org/about/deployment.html"
+        - text: "FAQ"
+          href: "https://idr.openmicroscopy.org/about/faq/"
+    - text: "Submissions"
+      href: "https://idr.openmicroscopy.org/about/submission.html"
+      submenu:
+        - text: "Overview"
+          href: "https://idr.openmicroscopy.org/about/submission.html"
+        - text: "Screens"
+          href: "https://idr.openmicroscopy.org/about/screens.html"
+        - text: "Experiments"
+          href: "https://idr.openmicroscopy.org/about/experiments.html"
+  omero.web.gallery.subheading_html: "The Image Data Resource (IDR) is a public repository of image datasets from published scientific studies,<br/>where the community can submit, search and access high-quality bio-image data."
+  omero.web.gallery.footer_html: "IDR"
+  omero.web.gallery.category_queries:
+    latest:
+      label: "Light sheet fluorescence microscopy"
+      index: 0
+      query: "Imaging Method: light sheet fluorescence microscopy OR Imaging Method: light sheet fluorescence microscopy, SPIM"
+    infection:
+      label: "Infection studies"
+      index: 1
+      query: "Study Type:infection"
+    timelapse:
+      label: "Time-lapse imaging"
+      index: 2
+      query: "Study Type:time OR Study Type:5D OR Study Type:3D-tracking"
+    lightsheet:
+      label: "Light sheet fluorescence microscopy"
+      index: 3
+      query: "Study Type:light sheet"
+    proteinlocalization:
+      label: "Protein localization studies"
+      index: 4
+      query: "Study Type:protein localization"
+    histology:
+      label: "Digital pathology imaging"
+      index: 5
+      query: "Study Type:histology"
+    yeast:
+      label: "Yeast studies"
+      index: 6
+      query: "Organism: Saccharomyces cerevisiae OR Organism:Schizosaccharomyces pombe"
+    humancellscreen:
+      label: "High-content screening (human)"
+      index: 7
+      query: "Organism:Homo sapiens AND Study Type:high content screen"
+    others:
+      label: "Others"
+      index: 8
+      query: "LAST1000:date"
+  omero.web.gallery.filter_keys:
+  - label: "Name (IDR number)"
+    value: "Name"
+  - "Imaging Method"
+  - "License"
+  - "Organism"
+  - "Publication Authors"
+  - "Publication Title"
+  - "Screen Technology Type"
+  - "Screen Type"
+  - "Study Type"
+  omero.web.gallery.filter_mapr_keys:
+  - "antibody"
+  - "cellline"
+  - "compound"
+  - "gene"
+  - "phenotype"
+  - "sirna"
+  omero.web.gallery.super_categories:
+    cell:
+      label: "Cell - IDR"
+      title: "Welcome to Cell-IDR"
+      query: "Sample Type:cell"
+      image: "https://idr.openmicroscopy.org/webgateway/render_image/122770/0/0/"
+    tissue:
+      label: "Tissue - IDR"
+      title: "Welcome to Tissue-IDR"
+      query: "Sample Type:tissue"
+      image: "https://idr.openmicroscopy.org/webgateway/render_image_region/5470164/0/0/?region=1024,1024,696,520"
+  omero.web.gallery.title: "IDR: Image Data Resource"
+  omero.web.gallery.heading: "Welcome to IDR"
+  omero.web.gallery.study_short_name:
+  - key: "Name"
+    regex: "^(.*?)-.*?(.)$"
+    template: "$1$2"

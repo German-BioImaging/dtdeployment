@@ -1,0 +1,2 @@
+upgrade_distpackages_excludes:
+- "docker*"

@@ -1,0 +1,13 @@
+######################################################################
+# Variables specific to OMERO read-write servers
+# See omero-hosts.yml for common OMERO variables
+######################################################################
+
+omero_server_dbuser: omero
+omero_server_dbpassword: "{{ idr_secret_postgresql_password | default('omero') }}"
+omero_server_selfsigned_certificates: True
+
+idr_omero_web_timeout: 900
+
+idr_omero_web_nginx_server_extra_config:
+  - 'proxy_read_timeout {{ idr_omero_web_timeout }};'
