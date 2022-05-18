@@ -28,3 +28,8 @@ vm_flavour_medium: "m1.4xlarge"
 vm_flavour: "c1.2xlarge"
 vm_flavour_large: "c1.2xlarge"
 vm_flavour_medium: "c1.2xlarge"
+
+# Even smaller!
+vm_flavour: "c1.large"
+vm_flavour_large: "c1.large"
+vm_flavour_medium: "c1.large"
